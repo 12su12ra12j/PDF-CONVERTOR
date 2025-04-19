@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Converter Tool</title>
+    <script src="https://unpkg.com/pdf-lib@1.17.0/dist/pdf-lib.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <style>
+        #dropZone { 
+            border: 3px dashed #93c5fd; 
+            transition: all 0.3s ease; 
+        }
+        #dropZone.dragover { 
+            background-color: #e0f7fa; 
+            transform: scale(1.05); 
+        }
+        .btn { 
+            transition: transform 0.2s ease, background-color 0.3s ease; 
+        }
+        .btn:hover { 
+            transform: translateY(-2px); 
+        }
+        .hidden { display: none; }
+        #progressBar { 
+            height: 8px; 
+            background: linear-gradient(to right, #3b82f6, #10b981); 
+            transition: width 0.3s ease; 
+        }
+        #optionsGrid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+            gap: 1rem; 
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 flex flex-col items-center justify-center min-h-screen p-4">
+    <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-xl w-full max-w-3xl animate__animated animate__fadeIn">
+        <h1 class="text-3xl font-extrabold text-center text-gray-800 mb-6">PDF Converter Tool</h1>
+        <div id="dropZone" class="bg-blue-50 rounded-lg p-6 text-center mb-6 cursor-pointer animate__animated animate__pulse animate__infinite animate__slow">
+            <p class="text-gray-600 mb-2">Drag & Drop your PDF(s) here or click to upload</p>
+            <p id="fileName" class="text-sm text-gray-500 italic"></p>
+            <input type="file" id="pdfInput" accept="application/pdf" multiple class="hidden">
+        </div>
+        <div id="progressContainer" class="hidden mb-4">
+            <div id="progressBar" class="w-0 rounded-full"></div>
+        </div>
+        <div id="options" class="hidden mb-6 animate__animated animate__fadeIn">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Select an Option</h2>
+            <div id="optionsGrid">
+                <button id="addText" class="btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Add Text</button>
+                <button id="rotatePages" class="btn bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Rotate Pages</button>
+                <button id="mergePdfs" class="btn bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700">Merge PDFs</button>
+                <button id="extractPages" class="btn bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700">Extract Pages</button>
+                <button id="addWatermark" class="btn bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-teal-700">Add Watermark</button>
+                <button id="toImage" class="btn bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-700">To Image</button>
+                <button id="toWord" class="btn bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-700">To Word</button>
+                <button id="toExcel" class="btn bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-700">To Excel</button>
+                <button id="compressPdf" class="btn bg-pink-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-pink-700">Compress PDF</button>
+                <button id="splitPdf" class="btn bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-700">Split PDF</button>
+            </div>
+        </div>
+        <div id="output" class="hidden animate__animated animate__fadeIn">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Result</h2>
+            <a id="downloadLink" class="btn inline-block bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700">Download Result</a>
+            <div id="imagePreview" class="mt-6"></div>
+        </div>
+        <p id="status" class="text-center text-red-600 mt-4 font-medium"></p>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const pdfInput = document.getElementById('pdfInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const options = document.getElementById('options');
+        const output = document.getElementById('output');
+        const downloadLink = document.getElementById('downloadLink');
+        const imagePreview = document.getElementById('imagePreview');
+        const status = document.getElementById('status');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        let pdfFiles = [];
+
+        // Drag and drop functionality
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            pdfFiles = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
+            validateAndDisplayFiles();
+        });
+
+        dropZone.addEventListener('click', () => pdfInput.click());
+        pdfInput.addEventListener('change', () => {
+            pdfFiles = Array.from(pdfInput.files).filter(file => file.type === 'application/pdf');
+            validateAndDisplayFiles();
+        });
+
+        function validateAndDisplayFiles() {
+            if (pdfFiles.length > 0) {
+                fileNameDisplay.textContent = `Selected: ${pdfFiles.map(f => f.name).join(', ')}`;
+                options.classList.remove('hidden');
+                status.textContent = '';
+            } else {
+                fileNameDisplay.textContent = '';
+                status.textContent = 'Please upload valid PDF file(s).';
+            }
+        }
+
+        // Simulate progress animation
+        function showProgress() {
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 10;
+                progressBar.style.width = `${progress}%`;
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    progressContainer.classList.add('hidden');
+                }
+            }, 200);
+        }
+
+        // Helper function to handle PDF output
+        async function saveAndDownload(pdfDoc, fileName) {
+            const pdfBytes = await pdfDoc.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            downloadLink.href = URL.createObjectURL(blob);
+            downloadLink.download = fileName;
+            output.classList.remove('hidden');
+        }
+
+        // Option 1: Add Text to PDF
+        document.getElementById('addText').addEventListener('click', async () => {
+            try {
+                status.textContent = 'Adding text...';
+                showProgress();
+                const arrayBuffer = await pdfFiles[0].arrayBuffer();
+                const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+                const page = pdfDoc.getPage(0);
+                const { height } = page.getSize();
+                page.drawText('Converted by PDF Converter Tool', { x: 50, y: height - 50, size: 20, color: PDFLib.rgb(0, 0, 1) });
+                await saveAndDownload(pdfDoc, 'modified.pdf');
+                status.textContent = 'Text added successfully!';
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                progressContainer.classList.add('hidden');
+            }
+        });
+
+        // Option 2: Rotate Pages
+        document.getElementById('rotatePages').addEventListener('click', async () => {
+            try {
+                status.textContent = 'Rotating pages...';
+                showProgress();
+                const arrayBuffer = await pdfFiles[0].arrayBuffer();
+                const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+                pdfDoc.getPages().forEach(page => page.setRotation(PDFLib.degrees(page.getRotation().angle + 90)));
+                await saveAndDownload(pdfDoc, 'rotated.pdf');
+                status.textContent = 'Pages rotated successfully!';
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                progressContainer.classList.add('hidden');
+            }
+        });
+
+        // Option 3: Merge PDFs
+        document.getElementById('mergePdfs').addEventListener('click', async () => {
+            if (pdfFiles.length < 2) {
+                status.textContent = 'Please upload at least 2 PDFs to merge.';
+                return;
+            }
+            try {
+                status.textContent = 'Merging PDFs...';
+                showProgress();
+                const mergedPdf = await PDFLib.PDFDocument.create();
+                for (const file of pdfFiles) {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
+                    const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+                    copiedPages.forEach(page => mergedPdf.addPage(page));
+                }
+                await saveAndDownload(mergedPdf, 'merged.pdf');
+                status.textContent = 'PDFs merged successfully!';
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                progressContainer.classList.add('hidden');
+            }
+        });
+
+        // Option 4: Extract Pages
+        document.getElementById('extractPages').addEventListener('click', async () => {
+            try {
+                status.textContent = 'Extracting pages...';
+                showProgress();
+                const arrayBuffer = await pdfFiles[0].arrayBuffer();
+                const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+                const newPdf = await PDFLib.PDFDocument.create();
+                const [copiedPage] = await newPdf.copyPages(pdfDoc, [0]); // Extract first page as example
+                newPdf.addPage(copiedPage);
+                await saveAndDownload(newPdf, 'extracted.pdf');
+                status.textContent = 'Page extracted successfully!';
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                progressContainer.classList.add('hidden');
+            }
+        });
+
+        // Option 5: Add Watermark
+        document.getElementById('addWatermark').addEventListener('click', async () => {
+            try {
+                status.textContent = 'Adding watermark...';
+                showProgress();
+                const arrayBuffer = await pdfFiles[0].arrayBuffer();
+                const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+                const pages = pdfDoc.getPages();
+                pages.forEach(page => {
+                    const { width, height } = page.getSize();
+                    page.drawText('CONFIDENTIAL', { x: width / 4, y: height / 2, size: 50, color: PDFLib.rgb(0.5, 0.5, 0.5), opacity: 0.3 });
+                });
+                await saveAndDownload(pdfDoc, 'watermarked.pdf');
+                status.textContent = 'Watermark added successfully!';
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                progressContainer.classList.add('hidden');
+            }
+        });
+
+        // Option 6: Convert to Image (Placeholder)
+        document.getElementById('toImage').addEventListener('click', () => {
+            status.textContent = 'Image conversion requires server-side processing (e.g., pdf2pic or CloudConvert API).';
+            showProgress();
+            // Example server-side call:
+            /*
+            const formData = new FormData();
+            formData.append('pdf', pdfFiles[0]);
+            fetch('/convert-to-image', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    imagePreview.innerHTML = `<img src="${data.imageUrl}" alt="Converted Image" class="max-w-full rounded-lg">`;
+                    output.classList.remove('hidden');
+                    status.textContent = 'Image converted successfully!';
+                })
+                .catch(error => status.textContent = 'Error: ' + error.message);
+            */
+        });
+
+        // Option 7: Convert to Word (Placeholder)
+        document.getElementById('toWord').addEventListener('click', () => {
+            status.textContent = 'Word conversion requires server-side processing (e.g., CloudConvert or Adobe API).';
+            showProgress();
+        });
+
+        // Option 8: Convert to Excel (Placeholder)
+        document.getElementById('toExcel').addEventListener('click', () => {
+            status.textContent = 'Excel conversion requires server-side processing (e.g., CloudConvert API).';
+            showProgress();
+        });
+
+        // Option 9: Compress PDF (Placeholder)
+        document.getElementById('compressPdf').addEventListener('click', () => {
+            status.textContent = 'PDF compression requires server-side processing (e.g., iLovePDF or SmallPDF API).';
+            showProgress();
+        });
+
+        // Option 10: Split PDF
+        document.getElementById('splitPdf').addEventListener('click', async () => {
+            try {
+                status.textContent = 'Splitting PDF...';
+                showProgress();
+                const arrayBuffer = await pdfFiles[0].arrayBuffer();
+                const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+                const newPdf = await PDFLib.PDFDocument.create();
+                const [copiedPage] = await newPdf.copyPages(pdfDoc, [0]); // Split first page as example
+                newPdf.addPage(copiedPage);
+                await saveAndDownload(newPdf, 'split.pdf');
+                status.textContent = 'PDF split successfully!';
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                progressContainer.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
